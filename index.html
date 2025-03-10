@@ -3,12 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GPX/FIT Viewer with Segmentation</title>
+    <title>GPX Viewer with Segmentation</title>
 
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/togeojson/0.16.0/togeojson.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/fit-file-parser@1.8.0/browser/fit-parser.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <style>
@@ -20,8 +19,8 @@
 </head>
 <body>
 
-    <h2>GPX/FIT File Viewer with Segmentation</h2>
-    <input type="file" id="fileInput" accept=".gpx,.fit"><br><br>
+    <h2>GPX File Viewer with Segmentation</h2>
+    <input type="file" id="fileInput" accept=".gpx"><br><br>
 
     <label for="segmentType">Segmentation Type:</label>
     <select id="segmentType">
@@ -75,8 +74,6 @@
                 let extension = file.name.split('.').pop().toLowerCase();
                 if (extension === 'gpx') {
                     parseGPXFile(e.target.result);
-                } else if (extension === 'fit') {
-                    parseFITFile(e.target.result);
                 }
             };
             reader.readAsArrayBuffer(file);
@@ -101,46 +98,6 @@
                 let lat = parseFloat(pt.getAttribute('lat'));
                 let lon = parseFloat(pt.getAttribute('lon'));
                 let ele = parseFloat(pt.querySelector('ele')?.textContent || 0);
-
-                if (prevLat !== null) {
-                    totalDistance += haversineDistance(prevLat, prevLon, lat, lon);
-                }
-
-                points.push({ lat, lon, ele, distance: totalDistance });
-                elevations.push(ele);
-                prevLat = lat;
-                prevLon = lon;
-            });
-
-            updateElevationChart(elevations);
-            return { points, elevations, totalDistance };
-        }
-
-        function parseFITFile(data) {
-            let fitParser = new FitParser({ force: true });
-            fitParser.parse(data, function(error, fitData) {
-                if (error) {
-                    alert("Error reading FIT file");
-                    return;
-                }
-                routeData = parseFIT(fitData);
-                routeGeoJSON = pointsToGeoJSON(routeData.points);
-                displayRoute(routeGeoJSON);
-            });
-        }
-
-        function parseFIT(data) {
-            let points = [];
-            let elevations = [];
-            let totalDistance = 0;
-            let prevLat = null, prevLon = null;
-
-            data.records.forEach(record => {
-                if (!record.position_lat || !record.position_long || !record.altitude) return;
-
-                let lat = record.position_lat;
-                let lon = record.position_long;
-                let ele = record.altitude;
 
                 if (prevLat !== null) {
                     totalDistance += haversineDistance(prevLat, prevLon, lat, lon);
@@ -187,7 +144,7 @@
 
         function segmentRoute() {
             if (!routeData) {
-                alert('Upload a GPX/FIT file first.');
+                alert('Upload a GPX file first.');
                 return;
             }
 
@@ -242,22 +199,6 @@
             });
         }
 
-        function pointsToGeoJSON(points) {
-            return {
-                type: 'FeatureCollection',
-                features: points.map(pt => ({
-                    type: 'Feature',
-                    geometry: {
-                        type: 'Point',
-                        coordinates: [pt.lon, pt.lat]
-                    },
-                    properties: {
-                        elevation: pt.ele
-                    }
-                }))
-            };
-        }
-
         function exportCSV() {
             let csvContent = "data:text/csv;charset=utf-8,Segment,Start,End,Distance (km)\n";
             document.querySelectorAll("#segmentTable tbody tr").forEach(row => {
@@ -269,6 +210,22 @@
             link.setAttribute("href", encodedUri);
             link.setAttribute("download", "segments.csv");
             link.click();
+        }
+
+        // Haversine Distance Calculation
+        function haversineDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371; // Radius of Earth in km
+            const dLat = degreesToRadians(lat2 - lat1);
+            const dLon = degreesToRadians(lon2 - lon1);
+            const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(degreesToRadians(lat1)) * Math.cos(degreesToRadians(lat2)) *
+                Math.sin(dLon / 2) * Math.sin(dLon / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            return R * c; // Distance in km
+        }
+
+        function degreesToRadians(degrees) {
+            return degrees * (Math.PI / 180);
         }
     </script>
 
