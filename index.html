@@ -64,34 +64,32 @@
 
         let routeData = null;
         let elevationChart;
+        let routeGeoJSON = null;  // Caching GeoJSON for reuse after parsing
 
         document.getElementById('fileInput').addEventListener('change', function(event) {
             let file = event.target.files[0];
             if (!file) return;
 
             let reader = new FileReader();
-            reader.onload = function(e) {
+            reader.onload = async function(e) {
                 let extension = file.name.split('.').pop().toLowerCase();
                 if (extension === 'gpx') {
-                    let parser = new DOMParser();
-                    let xml = parser.parseFromString(e.target.result, 'application/xml');
-                    let geojson = toGeoJSON.gpx(xml);
-                    routeData = parseGPX(xml);
-                    displayRoute(geojson);
+                    parseGPXFile(e.target.result);
                 } else if (extension === 'fit') {
-                    let fitParser = new FitParser({ force: true });
-                    fitParser.parse(e.target.result, function(error, data) {
-                        if (error) {
-                            alert("Error reading FIT file");
-                            return;
-                        }
-                        routeData = parseFIT(data);
-                        displayRoute(routeData.geojson);
-                    });
+                    parseFITFile(e.target.result);
                 }
             };
             reader.readAsArrayBuffer(file);
         });
+
+        async function parseGPXFile(data) {
+            const parser = new DOMParser();
+            const xml = parser.parseFromString(data, 'application/xml');
+            const geojson = toGeoJSON.gpx(xml);
+            routeData = parseGPX(xml);
+            routeGeoJSON = geojson;
+            displayRoute(geojson);
+        }
 
         function parseGPX(xml) {
             let points = [];
@@ -118,6 +116,19 @@
             return { points, elevations, totalDistance };
         }
 
+        function parseFITFile(data) {
+            let fitParser = new FitParser({ force: true });
+            fitParser.parse(data, function(error, fitData) {
+                if (error) {
+                    alert("Error reading FIT file");
+                    return;
+                }
+                routeData = parseFIT(fitData);
+                routeGeoJSON = pointsToGeoJSON(routeData.points);
+                displayRoute(routeGeoJSON);
+            });
+        }
+
         function parseFIT(data) {
             let points = [];
             let elevations = [];
@@ -142,7 +153,7 @@
             });
 
             updateElevationChart(elevations);
-            return { points, elevations, totalDistance, geojson: pointsToGeoJSON(points) };
+            return { points, elevations, totalDistance };
         }
 
         function displayRoute(geojson) {
@@ -150,10 +161,10 @@
                 alert("No valid route data found!");
                 return;
             }
-        
+
             let trackLayer = L.geoJSON(geojson).addTo(map);
             let bounds = trackLayer.getBounds();
-        
+
             if (bounds.isValid()) {
                 map.fitBounds(bounds);
             } else {
@@ -185,7 +196,7 @@
             let cumulativeDistance = 0, cumulativeElevation = 0;
             let segmentSize = routeData.totalDistance / numSegments;
             let segmentStart = routeData.points[0];
-            let ratio = 1; // Set desired ratio here (e.g., 1km per 100m elevation)
+            let ratio = 1;
 
             for (let i = 1; i < routeData.points.length; i++) {
                 let point = routeData.points[i];
@@ -210,7 +221,7 @@
 
         function updateSegmentTable(segments) {
             let tableBody = document.querySelector('#segmentTable tbody');
-            tableBody.innerHTML = ""; // Clear previous rows
+            tableBody.innerHTML = "";
 
             let cumulativeDistance = 0, cumulativeElevation = 0;
             segments.forEach((segment, index) => {
@@ -225,7 +236,7 @@
                     <td>${(segment.end.ele - segment.start.ele).toFixed(2)}</td>
                     <td>${cumulativeDistance.toFixed(2)}</td>
                     <td>${cumulativeElevation.toFixed(2)}</td>
-                    <td>--</td> <!-- POIs can be added here if relevant -->
+                    <td>--</td>
                 `;
                 tableBody.appendChild(row);
             });
