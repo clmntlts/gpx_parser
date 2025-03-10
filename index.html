@@ -161,7 +161,6 @@
             }
         }
 
-
         function updateElevationChart(elevations) {
             let ctx = document.getElementById('elevationChart').getContext('2d');
             if (elevationChart) elevationChart.destroy();
@@ -182,24 +181,70 @@
             }
 
             let numSegments = parseInt(document.getElementById('numSegments').value);
-            let segmentSize = routeData.totalDistance / numSegments;
-
             let segments = [];
             let cumulativeDistance = 0, cumulativeElevation = 0;
+            let segmentSize = routeData.totalDistance / numSegments;
             let segmentStart = routeData.points[0];
+            let ratio = 1; // Set desired ratio here (e.g., 1km per 100m elevation)
 
             for (let i = 1; i < routeData.points.length; i++) {
                 let point = routeData.points[i];
                 let segmentDistance = point.distance - segmentStart.distance;
+                let segmentElevation = point.ele - segmentStart.ele;
 
-                if (segmentDistance >= segmentSize || i === routeData.points.length - 1) {
+                if (document.getElementById('segmentType').value === 'ratio' && (segmentDistance / segmentElevation) >= ratio) {
                     segments.push({ start: segmentStart, end: point, distance: segmentDistance.toFixed(2) });
                     cumulativeDistance += segmentDistance;
+                    cumulativeElevation += segmentElevation;
+                    segmentStart = point;
+                } else if (document.getElementById('segmentType').value === 'distance' && segmentDistance >= segmentSize) {
+                    segments.push({ start: segmentStart, end: point, distance: segmentDistance.toFixed(2) });
+                    cumulativeDistance += segmentDistance;
+                    cumulativeElevation += segmentElevation;
                     segmentStart = point;
                 }
             }
 
             updateSegmentTable(segments);
+        }
+
+        function updateSegmentTable(segments) {
+            let tableBody = document.querySelector('#segmentTable tbody');
+            tableBody.innerHTML = ""; // Clear previous rows
+
+            let cumulativeDistance = 0, cumulativeElevation = 0;
+            segments.forEach((segment, index) => {
+                cumulativeDistance += parseFloat(segment.distance);
+                cumulativeElevation += segment.end.ele - segment.start.ele;
+                let row = document.createElement("tr");
+                row.innerHTML = `
+                    <td>${index + 1}</td>
+                    <td>${segment.start.lat.toFixed(5)}, ${segment.start.lon.toFixed(5)}</td>
+                    <td>${segment.end.lat.toFixed(5)}, ${segment.end.lon.toFixed(5)}</td>
+                    <td>${segment.distance}</td>
+                    <td>${(segment.end.ele - segment.start.ele).toFixed(2)}</td>
+                    <td>${cumulativeDistance.toFixed(2)}</td>
+                    <td>${cumulativeElevation.toFixed(2)}</td>
+                    <td>--</td> <!-- POIs can be added here if relevant -->
+                `;
+                tableBody.appendChild(row);
+            });
+        }
+
+        function pointsToGeoJSON(points) {
+            return {
+                type: 'FeatureCollection',
+                features: points.map(pt => ({
+                    type: 'Feature',
+                    geometry: {
+                        type: 'Point',
+                        coordinates: [pt.lon, pt.lat]
+                    },
+                    properties: {
+                        elevation: pt.ele
+                    }
+                }))
+            };
         }
 
         function exportCSV() {
