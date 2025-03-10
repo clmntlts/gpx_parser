@@ -191,16 +191,13 @@
                     <em>Description:</em> ${wpt.desc || 'No description'}
                 `;
         
-                // Create marker
+                // Create marker with popup binding
                 let marker = L.marker([wpt.lat, wpt.lon]).addTo(map);
         
                 // Bind popup to the marker
                 marker.bindPopup(popupContent);
         
-                // Ensure the popup opens when the marker is clicked
-                marker.on('click', function() {
-                    marker.openPopup();
-                });
+                // No need to manually call openPopup here, bindPopup does it automatically on click
             });
         }
 
