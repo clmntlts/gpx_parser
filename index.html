@@ -67,44 +67,54 @@
         let waypoints = [];
 
         document.getElementById('fileInput').addEventListener('change', function(event) {
-            let file = event.target.files[0];
-            if (!file) return;
-
-            let reader = new FileReader();
-            reader.onload = async function(e) {
-                let extension = file.name.split('.').pop().toLowerCase();
-                if (extension === 'gpx') {
-                    parseGPXFile(e.target.result);
+        let file = event.target.files[0];
+        if (!file) return;
+    
+        let reader = new FileReader();
+        reader.onload = function(e) {
+            // Log the first 100 characters to check if the file is correctly loaded
+            console.log("Loaded file content:", e.target.result.slice(0, 100));
+            
+            let extension = file.name.split('.').pop().toLowerCase();
+            if (extension === 'gpx') {
+                // Ensure the content is treated as a text
+                let textData = e.target.result;
+                try {
+                    parseGPXFile(textData);
+                } catch (err) {
+                    alert('Error parsing GPX file: ' + err);
                 }
-            };
-            reader.readAsArrayBuffer(file);
-        });
-
-        async function parseGPXFile(data) {
-            const parser = new DOMParser();
-            const xml = parser.parseFromString(data, 'application/xml');
+            }
+        };
+        reader.readAsText(file);  // Read the file as plain text (this might help with any invisible characters)
+    });
+    
+    async function parseGPXFile(data) {
+        const parser = new DOMParser();
+        let xml;
+        try {
+            xml = parser.parseFromString(data, 'application/xml');
             
-            // Log the raw XML to the console for debugging
-            console.log("Raw XML:", data);
-            
-            // Check for parser errors in XML
-            const parserError = xml.querySelector('parsererror');
-            if (parserError) {
+            // Check for parsing errors
+            if (xml.querySelector('parsererror')) {
                 alert("Error parsing GPX file.");
-                console.error("Parsing error:", parserError);
                 return;
             }
-            
-            const geojson = toGeoJSON.gpx(xml);
-            routeData = parseGPX(xml);
-            routeGeoJSON = geojson;
-            
-            if (routeData && routeData.points && routeData.points.length > 0) {
-                displayRoute(geojson);
-            } else {
-                alert("No valid route data found in the GPX file.");
-            }
+        } catch (e) {
+            alert('Error parsing the XML: ' + e.message);
+            return;
         }
+
+        const geojson = toGeoJSON.gpx(xml);  // Assuming toGeoJSON is available
+        routeData = parseGPX(xml);
+        routeGeoJSON = geojson;
+        
+        if (routeData && routeData.points && routeData.points.length > 0) {
+            displayRoute(geojson);
+        } else {
+            alert("No valid route data found in the GPX file.");
+        }
+    }
 
 
 
