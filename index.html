@@ -83,9 +83,18 @@
         async function parseGPXFile(data) {
             const parser = new DOMParser();
             const xml = parser.parseFromString(data, 'application/xml');
+        
+            // Check for parsing errors
+            if (xml.querySelector('parsererror')) {
+                alert("Error parsing GPX file.");
+                return;
+            }
+        
             const geojson = toGeoJSON.gpx(xml);
             routeData = parseGPX(xml);
             routeGeoJSON = geojson;
+        
+            // Check if routeData contains valid data
             if (routeData && routeData.points && routeData.points.length > 0) {
                 displayRoute(geojson);
             } else {
@@ -93,28 +102,32 @@
             }
         }
 
+
         function parseGPX(xml) {
             let points = [];
             let elevations = [];
             let totalDistance = 0;
             let prevLat = null, prevLon = null;
-
+        
             // Extracting track points
             xml.querySelectorAll('trkpt').forEach(pt => {
                 let lat = parseFloat(pt.getAttribute('lat'));
                 let lon = parseFloat(pt.getAttribute('lon'));
                 let ele = parseFloat(pt.querySelector('ele')?.textContent || 0);
-
+        
                 if (prevLat !== null) {
                     totalDistance += haversineDistance(prevLat, prevLon, lat, lon);
                 }
-
+        
                 points.push({ lat, lon, ele, distance: totalDistance });
                 elevations.push(ele);
                 prevLat = lat;
                 prevLon = lon;
             });
-
+        
+            console.log("Parsed points:", points);
+            console.log("Parsed elevations:", elevations);
+        
             // Extracting waypoints
             xml.querySelectorAll('wpt').forEach(wpt => {
                 let lat = parseFloat(wpt.getAttribute('lat'));
@@ -122,10 +135,13 @@
                 let name = wpt.querySelector('name')?.textContent || "Unnamed";
                 waypoints.push({ lat, lon, name });
             });
-
+        
+            console.log("Parsed waypoints:", waypoints);
+        
             updateElevationChart(elevations);
             return { points, elevations, totalDistance };
         }
+
 
         function displayRoute(geojson) {
             if (!geojson || !geojson.features || geojson.features.length === 0) {
