@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Route Viewer (GPX & FIT)</title>
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/togeojson/0.16.0/togeojson.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@garmin-fit-sdk"></script>
+
+    <style>
+        #map { height: 500px; width: 100%; margin-bottom: 20px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { border: 1px solid black; padding: 8px; text-align: left; }
+        #elevationChart { width: 100%; height: 300px; }
+    </style>
+</head>
+<body>
+
+    <h2>Route Viewer (GPX & FIT)</h2>
+    <input type="file" id="routeFile" accept=".gpx,.fit"><br><br>
+
+    <label for="segmentType">Segmentation Type:</label>
+    <select id="segmentType">
+        <option value="distance">Equal Distance</option>
+        <option value="ratio">Distance/Elevation Ratio</option>
+    </select>
+
+    <label for="numSegments">Number of Segments:</label>
+    <input type="number" id="numSegments" value="10" min="1">
+    <button onclick="segmentRoute()">Segment Route</button>
+
+    <div id="map"></div>
+
+    <h3>Elevation Profile</h3>
+    <canvas id="elevationChart"></canvas>
+
+    <h3>Segmented Route Data</h3>
+    <button onclick="exportCSV()">Export as CSV</button>
+    <table id="segmentTable">
+        <thead>
+            <tr>
+                <th>Segment</th>
+                <th>Start Coordinates</th>
+                <th>End Coordinates</th>
+                <th>Distance (km)</th>
+                <th>Elevation Gain (m)</th>
+                <th>Cumulative Distance (km)</th>
+                <th>Cumulative Elevation (m)</th>
+                <th>POIs</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+
+    <script>
+        let map = L.map('map').setView([45, -113], 5);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(map);
+
+        let routeData = null;
+        let elevationChart;
+        document.getElementById('routeFile').addEventListener('change', function(event) {
+            let file = event.target.files[0];
+            if (!file) return;
+
+            let reader = new FileReader();
+            reader.onload = function(e) {
+                if (file.name.endsWith(".gpx")) {
+                    let parser = new DOMParser();
+                    let xml = parser.parseFromString(e.target.result, 'application/xml');
+                    let geojson = toGeoJSON.gpx(xml);
+                    routeData = parseGPXData(xml);
+                    displayRoute(geojson);
+                } else if (file.name.endsWith(".fit")) {
+                    parseFITData(e.target.result);
+                }
+            };
+            if (file.name.endsWith(".fit")) {
+                reader.readAsArrayBuffer(file);
+            } else {
+                reader.readAsText(file);
+            }
+        });
+
+        function parseGPXData(xml) {
+            let trkpts = xml.getElementsByTagName('trkpt');
+            let points = [], elevations = [], totalDistance = 0;
+            let prevLat = null, prevLon = null;
+
+            for (let i = 0; i < trkpts.length; i++) {
+                let lat = parseFloat(trkpts[i].getAttribute('lat'));
+                let lon = parseFloat(trkpts[i].getAttribute('lon'));
+                let ele = parseFloat(trkpts[i].getElementsByTagName('ele')[0]?.textContent || 0);
+                
+                if (prevLat !== null) {
+                    totalDistance += haversineDistance(prevLat, prevLon, lat, lon);
+                }
+                
+                points.push({ lat, lon, ele, distance: totalDistance });
+                elevations.push(ele);
+                prevLat = lat;
+                prevLon = lon;
+            }
+
+            updateElevationChart(elevations);
+            return { points, elevations, totalDistance };
+        }
+
+        function parseFITData(fileData) {
+            let fitParser = new FitParser();
+            let parsedData = fitParser.parse(fileData);
+            let points = [], elevations = [], totalDistance = 0;
+            let prevLat = null, prevLon = null;
+
+            parsedData.records.forEach(record => {
+                if (record.position_lat !== undefined && record.position_long !== undefined) {
+                    let lat = record.position_lat / (180 / Math.PI);
+                    let lon = record.position_long / (180 / Math.PI);
+                    let ele = record.altitude || 0;
+
+                    if (prevLat !== null) {
+                        totalDistance += haversineDistance(prevLat, prevLon, lat, lon);
+                    }
+
+                    points.push({ lat, lon, ele, distance: totalDistance });
+                    elevations.push(ele);
+                    prevLat = lat;
+                    prevLon = lon;
+                }
+            });
+
+            routeData = { points, elevations, totalDistance };
+            updateElevationChart(elevations);
+            displayRoute({ type: 'FeatureCollection', features: points.map(p => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [p.lon, p.lat] } })) });
+        }
+
+        function displayRoute(geojson) {
+            let trackLayer = L.geoJSON(geojson).addTo(map);
+            map.fitBounds(trackLayer.getBounds());
+        }
+
+        function updateElevationChart(elevations) {
+            let ctx = document.getElementById('elevationChart').getContext('2d');
+            if (elevationChart) elevationChart.destroy();
+
+            elevationChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: elevations.map((_, index) => index),
+                    datasets: [{ label: 'Elevation (m)', data: elevations, borderColor: 'green', fill: false }]
+                },
+                options: { responsive: true }
+            });
+        }
+
+        function haversineDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371;
+            let dLat = (lat2 - lat1) * Math.PI / 180;
+            let dLon = (lon2 - lon1) * Math.PI / 180;
+            let a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
+            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        }
+    </script>
+
+</body>
+</html>
