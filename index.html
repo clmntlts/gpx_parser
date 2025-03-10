@@ -123,6 +123,7 @@
         let elevations = [];
         let totalDistance = 0;
         let prevLat = null, prevLon = null;
+        let waypoints = [];  // This will store the waypoints
     
         // Extracting track points
         xml.querySelectorAll('trkpt').forEach(pt => {
@@ -140,21 +141,20 @@
             prevLon = lon;
         });
     
-        console.log("Parsed points:", points);
-        console.log("Parsed elevations:", elevations);
-    
-        // Extracting waypoints
+        // Extracting waypoints with all additional tags
         xml.querySelectorAll('wpt').forEach(wpt => {
             let lat = parseFloat(wpt.getAttribute('lat'));
             let lon = parseFloat(wpt.getAttribute('lon'));
             let name = wpt.querySelector('name')?.textContent || "Unnamed";
-            waypoints.push({ lat, lon, name });
+            let cmt = wpt.querySelector('cmt')?.textContent || "";
+            let desc = wpt.querySelector('desc')?.textContent || "";
+    
+            // Store the waypoint with all tags
+            waypoints.push({ lat, lon, name, cmt, desc });
         });
     
-        console.log("Parsed waypoints:", waypoints);
-    
         updateElevationChart(elevations);
-        return { points, elevations, totalDistance };
+        return { points, elevations, totalDistance, waypoints };  // Return waypoints too
     }
 
 
@@ -165,23 +165,30 @@
                 alert("No valid route data found!");
                 return;
             }
-
+        
             let trackLayer = L.geoJSON(geojson).addTo(map);
             let bounds = trackLayer.getBounds();
-
+        
             if (bounds.isValid()) {
                 map.fitBounds(bounds);
             } else {
                 alert("Invalid route bounds.");
             }
-
-            // Adding waypoints to the map
+        
+            // Adding waypoints to the map with all details
             waypoints.forEach(wpt => {
+                let popupContent = `
+                    <strong>${wpt.name}</strong><br>
+                    <em>Comment:</em> ${wpt.cmt}<br>
+                    <em>Description:</em> ${wpt.desc}
+                `;
+        
                 L.marker([wpt.lat, wpt.lon]).addTo(map)
-                    .bindPopup(wpt.name)
+                    .bindPopup(popupContent)
                     .openPopup();
             });
         }
+
 
         function updateElevationChart(elevations) {
             let ctx = document.getElementById('elevationChart').getContext('2d');
