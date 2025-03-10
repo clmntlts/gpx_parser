@@ -226,10 +226,19 @@
             let segmentType = document.getElementById('segmentType').value;
             let segments = [];
             let cumulativeDistance = 0, cumulativeElevation = 0;
-            let segmentSize = routeData.totalDistance / numSegments;
             let segmentStart = routeData.points[0];
             let segmentElevationGain = 0;
             let segmentDistance = 0;
+            let segmentSize = routeData.totalDistance / numSegments;
+        
+            if (segmentType === 'ratio') {
+                // Pre-calculate the total elevation gain for ratio segmentation
+                let totalElevationGain = routeData.elevations.reduce((total, elevation, index) => {
+                    if (index === 0) return total;
+                    return total + Math.max(0, elevation - routeData.elevations[index - 1]); // Only add positive elevation gain
+                }, 0);
+                let desiredRatio = totalElevationGain / routeData.totalDistance; // Calculate the desired ratio (elevation gain per distance unit)
+            }
         
             for (let i = 1; i < routeData.points.length; i++) {
                 let point = routeData.points[i];
@@ -258,7 +267,11 @@
                     // Segmentation based on distance/elevation ratio
                     let distanceElevationRatio = segmentElevationGain / segmentDistance;
         
-                    if (segmentElevationGain > 0 && distanceElevationRatio >= 20) {  // Example ratio threshold
+                    // Add a new segment if the ratio is approximately equal to the desired ratio
+                    // We want to create approximately the same number of segments with similar ratio
+                    let targetDistance = (segmentSize * segments.length) / routeData.totalDistance; // Scale segment size for the desired number of segments
+        
+                    if (segmentDistance >= targetDistance) {
                         segments.push({ start: segmentStart, end: point, distance: segmentDistance.toFixed(2), elevationGain: segmentElevationGain.toFixed(2) });
                         cumulativeDistance += segmentDistance;
                         cumulativeElevation += segmentElevationGain;
@@ -274,8 +287,32 @@
                 segments.push({ start: segmentStart, end: routeData.points[routeData.points.length - 1], distance: routeData.points[routeData.points.length - 1].distance - segmentStart.distance, elevationGain: segmentElevationGain.toFixed(2) });
             }
         
+            // Adjust segments if the exact number of segments isn't met
+            if (segments.length !== numSegments) {
+                let remainingDistance = routeData.totalDistance - cumulativeDistance;
+                let remainingElevation = totalElevationGain - cumulativeElevation;
+                let lastSegment = segments[segments.length - 1];
+        
+                // Add or remove segments to match the number required
+                while (segments.length < numSegments) {
+                    let segment = {
+                        start: lastSegment.end,
+                        end: routeData.points[routeData.points.length - 1],
+                        distance: remainingDistance.toFixed(2),
+                        elevationGain: remainingElevation.toFixed(2)
+                    };
+                    segments.push(segment);
+                }
+        
+                // If more segments than expected, adjust the last segment
+                while (segments.length > numSegments) {
+                    segments.pop();  // Remove the last segment if there are too many
+                }
+            }
+        
             updateSegmentTable(segments);
         }
+
 
         
         function updateSegmentTable(segments) {
