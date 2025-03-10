@@ -83,24 +83,29 @@
         async function parseGPXFile(data) {
             const parser = new DOMParser();
             const xml = parser.parseFromString(data, 'application/xml');
-        
-            // Check for parsing errors
-            if (xml.querySelector('parsererror')) {
+            
+            // Log the raw XML to the console for debugging
+            console.log("Raw XML:", data);
+            
+            // Check for parser errors in XML
+            const parserError = xml.querySelector('parsererror');
+            if (parserError) {
                 alert("Error parsing GPX file.");
+                console.error("Parsing error:", parserError);
                 return;
             }
-        
+            
             const geojson = toGeoJSON.gpx(xml);
             routeData = parseGPX(xml);
             routeGeoJSON = geojson;
-        
-            // Check if routeData contains valid data
+            
             if (routeData && routeData.points && routeData.points.length > 0) {
                 displayRoute(geojson);
             } else {
                 alert("No valid route data found in the GPX file.");
             }
         }
+
 
 
         function parseGPX(xml) {
