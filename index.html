@@ -63,7 +63,8 @@
 
         let routeData = null;
         let elevationChart;
-        let routeGeoJSON = null;  // Caching GeoJSON for reuse after parsing
+        let routeGeoJSON = null;
+        let waypoints = [];
 
         document.getElementById('fileInput').addEventListener('change', function(event) {
             let file = event.target.files[0];
@@ -85,7 +86,11 @@
             const geojson = toGeoJSON.gpx(xml);
             routeData = parseGPX(xml);
             routeGeoJSON = geojson;
-            displayRoute(geojson);
+            if (routeData && routeData.points && routeData.points.length > 0) {
+                displayRoute(geojson);
+            } else {
+                alert("No valid route data found in the GPX file.");
+            }
         }
 
         function parseGPX(xml) {
@@ -94,6 +99,7 @@
             let totalDistance = 0;
             let prevLat = null, prevLon = null;
 
+            // Extracting track points
             xml.querySelectorAll('trkpt').forEach(pt => {
                 let lat = parseFloat(pt.getAttribute('lat'));
                 let lon = parseFloat(pt.getAttribute('lon'));
@@ -107,6 +113,14 @@
                 elevations.push(ele);
                 prevLat = lat;
                 prevLon = lon;
+            });
+
+            // Extracting waypoints
+            xml.querySelectorAll('wpt').forEach(wpt => {
+                let lat = parseFloat(wpt.getAttribute('lat'));
+                let lon = parseFloat(wpt.getAttribute('lon'));
+                let name = wpt.querySelector('name')?.textContent || "Unnamed";
+                waypoints.push({ lat, lon, name });
             });
 
             updateElevationChart(elevations);
@@ -127,6 +141,13 @@
             } else {
                 alert("Invalid route bounds.");
             }
+
+            // Adding waypoints to the map
+            waypoints.forEach(wpt => {
+                L.marker([wpt.lat, wpt.lon]).addTo(map)
+                    .bindPopup(wpt.name)
+                    .openPopup();
+            });
         }
 
         function updateElevationChart(elevations) {
@@ -153,19 +174,13 @@
             let cumulativeDistance = 0, cumulativeElevation = 0;
             let segmentSize = routeData.totalDistance / numSegments;
             let segmentStart = routeData.points[0];
-            let ratio = 1;
 
             for (let i = 1; i < routeData.points.length; i++) {
                 let point = routeData.points[i];
                 let segmentDistance = point.distance - segmentStart.distance;
                 let segmentElevation = point.ele - segmentStart.ele;
 
-                if (document.getElementById('segmentType').value === 'ratio' && (segmentDistance / segmentElevation) >= ratio) {
-                    segments.push({ start: segmentStart, end: point, distance: segmentDistance.toFixed(2) });
-                    cumulativeDistance += segmentDistance;
-                    cumulativeElevation += segmentElevation;
-                    segmentStart = point;
-                } else if (document.getElementById('segmentType').value === 'distance' && segmentDistance >= segmentSize) {
+                if (segmentDistance >= segmentSize) {
                     segments.push({ start: segmentStart, end: point, distance: segmentDistance.toFixed(2) });
                     cumulativeDistance += segmentDistance;
                     cumulativeElevation += segmentElevation;
