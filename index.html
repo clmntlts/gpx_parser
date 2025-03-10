@@ -216,46 +216,67 @@
             });
         }
 
-        function segmentRoute() {
+       function segmentRoute() {
             if (!routeData) {
                 alert('Upload a GPX file first.');
                 return;
             }
         
             let numSegments = parseInt(document.getElementById('numSegments').value);
+            let segmentType = document.getElementById('segmentType').value;
             let segments = [];
             let cumulativeDistance = 0, cumulativeElevation = 0;
             let segmentSize = routeData.totalDistance / numSegments;
             let segmentStart = routeData.points[0];
-            let segmentElevationGain = 0; // Track elevation gain for each segment
+            let segmentElevationGain = 0;
+            let segmentDistance = 0;
         
             for (let i = 1; i < routeData.points.length; i++) {
                 let point = routeData.points[i];
-                let segmentDistance = point.distance - segmentStart.distance;
         
                 // Calculate elevation gain for the segment
                 let elevationChange = point.ele - routeData.points[i - 1].ele;
                 if (elevationChange > 0) {
-                    segmentElevationGain += elevationChange; // Add only positive elevation changes
+                    segmentElevationGain += elevationChange; // Only add positive elevation changes
                 }
         
-                // Check if we've reached the segment size
-                if (segmentDistance >= segmentSize) {
-                    segments.push({ start: segmentStart, end: point, distance: segmentDistance.toFixed(2), elevationGain: segmentElevationGain.toFixed(2) });
-                    cumulativeDistance += segmentDistance;
-                    cumulativeElevation += segmentElevationGain;
-                    segmentStart = point;
-                    segmentElevationGain = 0; // Reset elevation gain for the next segment
+                // Calculate segment distance
+                let distanceChange = point.distance - routeData.points[i - 1].distance;
+                segmentDistance += distanceChange;
+        
+                if (segmentType === 'distance') {
+                    // Segmentation based on equal distance
+                    if (segmentDistance >= segmentSize) {
+                        segments.push({ start: segmentStart, end: point, distance: segmentDistance.toFixed(2), elevationGain: segmentElevationGain.toFixed(2) });
+                        cumulativeDistance += segmentDistance;
+                        cumulativeElevation += segmentElevationGain;
+                        segmentStart = point;
+                        segmentDistance = 0;
+                        segmentElevationGain = 0;  // Reset elevation gain for the next segment
+                    }
+                } else if (segmentType === 'ratio') {
+                    // Segmentation based on distance/elevation ratio
+                    let distanceElevationRatio = segmentDistance / segmentElevationGain;
+        
+                    if (segmentElevationGain > 0 && distanceElevationRatio >= 10) {  // Example ratio threshold
+                        segments.push({ start: segmentStart, end: point, distance: segmentDistance.toFixed(2), elevationGain: segmentElevationGain.toFixed(2) });
+                        cumulativeDistance += segmentDistance;
+                        cumulativeElevation += segmentElevationGain;
+                        segmentStart = point;
+                        segmentDistance = 0;
+                        segmentElevationGain = 0;  // Reset elevation gain for the next segment
+                    }
                 }
             }
         
-            // Ensure the last segment is added, if not already done
+            // Ensure the last segment is added if not already done
             if (segmentStart !== routeData.points[routeData.points.length - 1]) {
                 segments.push({ start: segmentStart, end: routeData.points[routeData.points.length - 1], distance: routeData.points[routeData.points.length - 1].distance - segmentStart.distance, elevationGain: segmentElevationGain.toFixed(2) });
             }
         
             updateSegmentTable(segments);
         }
+
         
         function updateSegmentTable(segments) {
             let tableBody = document.querySelector('#segmentTable tbody');
