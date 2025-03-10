@@ -256,9 +256,9 @@
                     }
                 } else if (segmentType === 'ratio') {
                     // Segmentation based on distance/elevation ratio
-                    let distanceElevationRatio = segmentDistance / segmentElevationGain;
+                    let distanceElevationRatio = segmentElevationGain / segmentDistance;
         
-                    if (segmentElevationGain > 0 && distanceElevationRatio >= 10) {  // Example ratio threshold
+                    if (segmentElevationGain > 0 && distanceElevationRatio >= 20) {  // Example ratio threshold
                         segments.push({ start: segmentStart, end: point, distance: segmentDistance.toFixed(2), elevationGain: segmentElevationGain.toFixed(2) });
                         cumulativeDistance += segmentDistance;
                         cumulativeElevation += segmentElevationGain;
