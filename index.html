@@ -221,44 +221,57 @@
                 alert('Upload a GPX file first.');
                 return;
             }
-
+        
             let numSegments = parseInt(document.getElementById('numSegments').value);
             let segments = [];
             let cumulativeDistance = 0, cumulativeElevation = 0;
             let segmentSize = routeData.totalDistance / numSegments;
             let segmentStart = routeData.points[0];
-
+            let segmentElevationGain = 0; // Track elevation gain for each segment
+        
             for (let i = 1; i < routeData.points.length; i++) {
                 let point = routeData.points[i];
                 let segmentDistance = point.distance - segmentStart.distance;
-                let segmentElevation = point.ele - segmentStart.ele;
-
+        
+                // Calculate elevation gain for the segment
+                let elevationChange = point.ele - routeData.points[i - 1].ele;
+                if (elevationChange > 0) {
+                    segmentElevationGain += elevationChange; // Add only positive elevation changes
+                }
+        
+                // Check if we've reached the segment size
                 if (segmentDistance >= segmentSize) {
-                    segments.push({ start: segmentStart, end: point, distance: segmentDistance.toFixed(2) });
+                    segments.push({ start: segmentStart, end: point, distance: segmentDistance.toFixed(2), elevationGain: segmentElevationGain.toFixed(2) });
                     cumulativeDistance += segmentDistance;
-                    cumulativeElevation += segmentElevation;
+                    cumulativeElevation += segmentElevationGain;
                     segmentStart = point;
+                    segmentElevationGain = 0; // Reset elevation gain for the next segment
                 }
             }
-
+        
+            // Ensure the last segment is added, if not already done
+            if (segmentStart !== routeData.points[routeData.points.length - 1]) {
+                segments.push({ start: segmentStart, end: routeData.points[routeData.points.length - 1], distance: routeData.points[routeData.points.length - 1].distance - segmentStart.distance, elevationGain: segmentElevationGain.toFixed(2) });
+            }
+        
             updateSegmentTable(segments);
         }
-
+        
         function updateSegmentTable(segments) {
             let tableBody = document.querySelector('#segmentTable tbody');
             tableBody.innerHTML = "";
-
+        
             let cumulativeDistance = 0, cumulativeElevation = 0;
             segments.forEach((segment, index) => {
                 cumulativeDistance += parseFloat(segment.distance);
-                cumulativeElevation += segment.end.ele - segment.start.ele;
+                cumulativeElevation += parseFloat(segment.elevationGain);
                 let row = document.createElement("tr");
                 row.innerHTML = `
                     <td>${index + 1}</td>
                     <td>${segment.start.lat.toFixed(5)}, ${segment.start.lon.toFixed(5)}</td>
                     <td>${segment.end.lat.toFixed(5)}, ${segment.end.lon.toFixed(5)}</td>
                     <td>${segment.distance}</td>
-                    <td>${(segment.end.ele - segment.start.ele).toFixed(2)}</td>
+                    <td>${segment.elevationGain}</td>
                     <td>${cumulativeDistance.toFixed(2)}</td>
                     <td>${cumulativeElevation.toFixed(2)}</td>
                     <td>--</td>
@@ -266,6 +279,7 @@
                 tableBody.appendChild(row);
             });
         }
+
 
         function exportCSV() {
             let csvContent = "data:text/csv;charset=utf-8,Segment,Start,End,Distance (km)\n";
