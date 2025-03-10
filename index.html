@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/togeojson/0.16.0/togeojson.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/fit-file-parser/dist/fit-parser.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/fit-file-parser@1.8.0/browser/fit-parser.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <style>
@@ -146,9 +146,21 @@
         }
 
         function displayRoute(geojson) {
+            if (!geojson || !geojson.features || geojson.features.length === 0) {
+                alert("No valid route data found!");
+                return;
+            }
+        
             let trackLayer = L.geoJSON(geojson).addTo(map);
-            map.fitBounds(trackLayer.getBounds());
+            let bounds = trackLayer.getBounds();
+        
+            if (bounds.isValid()) {
+                map.fitBounds(bounds);
+            } else {
+                alert("Invalid route bounds.");
+            }
         }
+
 
         function updateElevationChart(elevations) {
             let ctx = document.getElementById('elevationChart').getContext('2d');
