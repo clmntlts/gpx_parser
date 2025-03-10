@@ -3,19 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GPS Route Viewer & Segmentation</title>
+    <title>GPX/FIT Viewer with Segmentation</title>
 
-    <!-- Leaflet for Map -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-
-    <!-- GPX to GeoJSON -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/togeojson/0.16.0/togeojson.min.js"></script>
-
-    <!-- FIT File Parser -->
-    <script src="https://cdn.jsdelivr.net/npm/fit-file-parser"></script>
-
-    <!-- Chart.js for Elevation Graph -->
+    <script src="https://cdn.jsdelivr.net/npm/fit-file-parser/dist/fit-parser.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <style>
@@ -27,8 +20,8 @@
 </head>
 <body>
 
-    <h2>GPS Route Viewer & Segmentation</h2>
-    <input type="file" id="gpsFile" accept=".gpx,.fit"><br><br>
+    <h2>GPX/FIT File Viewer with Segmentation</h2>
+    <input type="file" id="fileInput" accept=".gpx,.fit"><br><br>
 
     <label for="segmentType">Segmentation Type:</label>
     <select id="segmentType">
@@ -72,86 +65,113 @@
         let routeData = null;
         let elevationChart;
 
-        document.getElementById('gpsFile').addEventListener('change', function(event) {
+        document.getElementById('fileInput').addEventListener('change', function(event) {
             let file = event.target.files[0];
             if (!file) return;
 
             let reader = new FileReader();
             reader.onload = function(e) {
-                let fileType = file.name.split('.').pop().toLowerCase();
-                if (fileType === 'gpx') {
-                    parseGPX(e.target.result);
-                } else if (fileType === 'fit') {
-                    parseFIT(new Uint8Array(e.target.result));
-                } else {
-                    alert('Unsupported file format. Please upload a GPX or FIT file.');
+                let extension = file.name.split('.').pop().toLowerCase();
+                if (extension === 'gpx') {
+                    let parser = new DOMParser();
+                    let xml = parser.parseFromString(e.target.result, 'application/xml');
+                    let geojson = toGeoJSON.gpx(xml);
+                    routeData = parseGPX(xml);
+                    displayRoute(geojson);
+                } else if (extension === 'fit') {
+                    let fitParser = new FitParser({ force: true });
+                    fitParser.parse(e.target.result, function(error, data) {
+                        if (error) {
+                            alert("Error reading FIT file");
+                            return;
+                        }
+                        routeData = parseFIT(data);
+                        displayRoute(routeData.geojson);
+                    });
                 }
             };
-
-            if (file.name.endsWith('.fit')) {
-                reader.readAsArrayBuffer(file);
-            } else {
-                reader.readAsText(file);
-            }
+            reader.readAsArrayBuffer(file);
         });
 
-        function parseGPX(gpxText) {
-            let parser = new DOMParser();
-            let xml = parser.parseFromString(gpxText, 'application/xml');
-            let geojson = toGeoJSON.gpx(xml);
-            routeData = extractRouteData(geojson.features[0].geometry.coordinates);
-            L.geoJSON(geojson).addTo(map);
-            map.fitBounds(L.geoJSON(geojson).getBounds());
-            updateElevationChart(routeData.elevations);
-        }
+        function parseGPX(xml) {
+            let points = [];
+            let elevations = [];
+            let totalDistance = 0;
+            let prevLat = null, prevLon = null;
 
-        function parseFIT(fitArrayBuffer) {
-            let fitParser = new FitParser({ speedUnit: 'km/h', lengthUnit: 'km', temperatureUnit: 'celsius', elapsedRecordField: true });
-            fitParser.parse(fitArrayBuffer, function(error, data) {
-                if (error) {
-                    console.error('Error parsing FIT file:', error);
-                    alert('Invalid FIT file.');
-                    return;
+            xml.querySelectorAll('trkpt').forEach(pt => {
+                let lat = parseFloat(pt.getAttribute('lat'));
+                let lon = parseFloat(pt.getAttribute('lon'));
+                let ele = parseFloat(pt.querySelector('ele')?.textContent || 0);
+
+                if (prevLat !== null) {
+                    totalDistance += haversineDistance(prevLat, prevLon, lat, lon);
                 }
 
-                let trackPoints = data.records.map(record => ({
-                    lat: record.position_lat,
-                    lon: record.position_long,
-                    ele: record.altitude || 0,
-                    distance: record.distance || 0
-                }));
-
-                routeData = extractRouteData(trackPoints);
-                let polyline = L.polyline(trackPoints.map(p => [p.lat, p.lon]), { color: 'blue' }).addTo(map);
-                map.fitBounds(polyline.getBounds());
-                updateElevationChart(routeData.elevations);
+                points.push({ lat, lon, ele, distance: totalDistance });
+                elevations.push(ele);
+                prevLat = lat;
+                prevLon = lon;
             });
+
+            updateElevationChart(elevations);
+            return { points, elevations, totalDistance };
         }
 
-        function extractRouteData(points) {
-            let totalDistance = 0;
+        function parseFIT(data) {
+            let points = [];
             let elevations = [];
-            let processedPoints = [];
+            let totalDistance = 0;
+            let prevLat = null, prevLon = null;
 
-            for (let i = 0; i < points.length; i++) {
-                let [lon, lat, ele = 0] = points[i];
-                if (i > 0) totalDistance += haversineDistance(points[i - 1][1], points[i - 1][0], lat, lon);
+            data.records.forEach(record => {
+                if (!record.position_lat || !record.position_long || !record.altitude) return;
+
+                let lat = record.position_lat;
+                let lon = record.position_long;
+                let ele = record.altitude;
+
+                if (prevLat !== null) {
+                    totalDistance += haversineDistance(prevLat, prevLon, lat, lon);
+                }
+
+                points.push({ lat, lon, ele, distance: totalDistance });
                 elevations.push(ele);
-                processedPoints.push({ lat, lon, ele, distance: totalDistance });
-            }
+                prevLat = lat;
+                prevLon = lon;
+            });
 
-            return { points: processedPoints, elevations, totalDistance };
+            updateElevationChart(elevations);
+            return { points, elevations, totalDistance, geojson: pointsToGeoJSON(points) };
+        }
+
+        function displayRoute(geojson) {
+            let trackLayer = L.geoJSON(geojson).addTo(map);
+            map.fitBounds(trackLayer.getBounds());
+        }
+
+        function updateElevationChart(elevations) {
+            let ctx = document.getElementById('elevationChart').getContext('2d');
+            if (elevationChart) elevationChart.destroy();
+
+            elevationChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: elevations.map((_, i) => i),
+                    datasets: [{ label: 'Elevation (m)', data: elevations, borderColor: 'blue', fill: false }]
+                }
+            });
         }
 
         function segmentRoute() {
             if (!routeData) {
-                alert('Please upload a GPS file first.');
+                alert('Upload a GPX/FIT file first.');
                 return;
             }
 
             let numSegments = parseInt(document.getElementById('numSegments').value);
-            let segmentType = document.getElementById('segmentType').value;
-            let segmentSize = segmentType === 'distance' ? routeData.totalDistance / numSegments : routeData.totalDistance / numSegments * (routeData.elevations.length / routeData.totalDistance);
+            let segmentSize = routeData.totalDistance / numSegments;
+
             let segments = [];
             let cumulativeDistance = 0, cumulativeElevation = 0;
             let segmentStart = routeData.points[0];
@@ -159,21 +179,10 @@
             for (let i = 1; i < routeData.points.length; i++) {
                 let point = routeData.points[i];
                 let segmentDistance = point.distance - segmentStart.distance;
-                let segmentElevation = point.ele - segmentStart.ele;
 
                 if (segmentDistance >= segmentSize || i === routeData.points.length - 1) {
-                    segments.push({
-                        start: segmentStart,
-                        end: point,
-                        distance: segmentDistance.toFixed(2),
-                        elevationGain: segmentElevation.toFixed(2),
-                        cumulativeDistance: cumulativeDistance.toFixed(2),
-                        cumulativeElevation: cumulativeElevation.toFixed(2),
-                        pois: "N/A"
-                    });
-
+                    segments.push({ start: segmentStart, end: point, distance: segmentDistance.toFixed(2) });
                     cumulativeDistance += segmentDistance;
-                    cumulativeElevation += segmentElevation;
                     segmentStart = point;
                 }
             }
@@ -181,19 +190,17 @@
             updateSegmentTable(segments);
         }
 
-        function updateSegmentTable(segments) {
-            let tbody = document.getElementById('segmentTable').querySelector('tbody');
-            tbody.innerHTML = segments.map((seg, i) =>
-                `<tr><td>${i + 1}</td><td>${seg.start.lat}, ${seg.start.lon}</td><td>${seg.end.lat}, ${seg.end.lon}</td><td>${seg.distance} km</td><td>${seg.elevationGain} m</td><td>${seg.cumulativeDistance} km</td><td>${seg.cumulativeElevation} m</td><td>${seg.pois}</td></tr>`
-            ).join('');
-        }
+        function exportCSV() {
+            let csvContent = "data:text/csv;charset=utf-8,Segment,Start,End,Distance (km)\n";
+            document.querySelectorAll("#segmentTable tbody tr").forEach(row => {
+                csvContent += [...row.children].map(cell => cell.textContent).join(",") + "\n";
+            });
 
-        function haversineDistance(lat1, lon1, lat2, lon2) {
-            const R = 6371;
-            let dLat = (lat2 - lat1) * Math.PI / 180;
-            let dLon = (lon2 - lon1) * Math.PI / 180;
-            let a = Math.sin(dLat/2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) ** 2;
-            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            let encodedUri = encodeURI(csvContent);
+            let link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", "segments.csv");
+            link.click();
         }
     </script>
 
